@@ -1,0 +1,6 @@
+{
+  "name": "ISODE 8.0 - Protocolos OSI",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "postCreateCommand": "bash instalar-isode.sh",
+  "postAttachCommand": "echo 'Para la demostracion escribe:  bash demo-isode.sh'"
+}
