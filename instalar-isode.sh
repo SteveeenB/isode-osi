@@ -17,6 +17,10 @@ paso() { printf '\n\033[1;36m==> %s\033[0m\n' "$1"; }
 paso "1/7 Instalando herramientas de compilacion (pide tu clave de Ubuntu)"
 sudo apt-get update -qq
 sudo apt-get install -y -qq build-essential git bison flex libcrypt-dev
+# tcpdump captura los paquetes y tshark (Wireshark en modo texto) los decodifica;
+# se usan en las opciones "por dentro" de demo-isode.sh
+echo "wireshark-common wireshark-common/install-setuid boolean false" | sudo debconf-set-selections
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq tcpdump tshark
 
 paso "2/7 Descargando el codigo fuente de ISODE 8.0"
 if [ ! -d "$SRC/.git" ]; then
