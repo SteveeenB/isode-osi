@@ -132,6 +132,7 @@ por_dentro_tp0() {
   CR = Connection Request  -> el cliente pide la conexion de transporte
   CC = Connection Confirm  -> el servidor (tsapd) la acepta
   DT = Data                -> lleva el mensaje
+  (cada uno es una TPDU: Transport Protocol Data Unit)
   DR = Disconnect Request  -> se cierra la conexion
 EOF
     seguir
@@ -139,10 +140,10 @@ EOF
     paso "2. El paquete CR (pedir conexion), byte a byte"
     local cr; cr=$(ts -r "$CAP/tp0.pcap" -Y "cotp.type == 0x0e" -T fields -e tcp.payload | head -1)
     desarmar "$cr" \
-      "4|33|TPKT|version 3, reservado 0, longitud total del paquete (RFC 1006)" \
-      "7|35|TP0 (CR)|largo del encabezado, E0 = CR, ref. destino 0000, ref. origen, clase 0" \
+      "4|33|TPKT|Transport Packet (RFC 1006): version 3, reservado 0, longitud total" \
+      "7|35|TP0 (CR)|largo del encabezado, E0 = CR (Connection Request), ref. destino 0000, ref. origen, clase 0" \
       "3|35|  opciones|C6: parametro de opciones (datos urgentes)" \
-      "4|35|  TSAP dest.|C2: a quien llamo -> 0x0080 = 128 = 'tsap/echo #128' en isoservices" \
+      "4|35|  TSAP dest.|C2: TSAP destino (Transport Service Access Point) -> 0x0080 = 128 = 'tsap/echo #128'" \
       "3|35|  tamano|C0: tamano maximo de TPDU, 0B -> 2^11 = 2048 bytes"
     echo
     echo "  En isoservices:  $(grep -m1 '^tsap/echo' $ETC/isoservices 2>/dev/null | tr -s '\t' ' ')"
@@ -150,9 +151,9 @@ EOF
 
     paso "3. El paquete DT con el mensaje, byte a byte"
     desarmar "$(paquete_datos "$CAP/tp0.pcap")" \
-      "4|33|TPKT|03 version 3 | 00 reservado | 00 1E longitud = 30 bytes en total" \
-      "3|35|TP0 (DT)|02 largo del encabezado | F0 tipo DT (datos) | 80 ultimo fragmento (EOT)" \
-      "23|32|Mensaje|\"$MSG\" + salto de linea = 23 bytes, sin modificar"
+      "4|33|TPKT|Transport Packet: 03 version 3 | 00 reservado | 00 1E longitud = 30 bytes" \
+      "3|35|TP0 (DT)|Transport Protocol clase 0: 02 largo | F0 DT (Data) | 80 EOT (End of TSDU, ultimo fragmento)" \
+      "23|32|Mensaje|\"$MSG\" + salto de linea = 23 bytes en ASCII, sin modificar"
     echo
     echo "  30 bytes = 4 (TPKT) + 3 (TP0) + 23 (mensaje).  Solo 7 bytes de encabezado OSI."
     seguir
@@ -194,8 +195,8 @@ por_dentro_capas() {
     desarmar "$s" \
       "4|33|TPKT|longitud 0x22 = 34" \
       "3|35|TP0 (DT)|encabezado de datos de transporte, igual que en el eco TP0" \
-      "2|34|Sesion GT|Give Tokens (sin parametros)" \
-      "2|34|Sesion DT|Data Transfer SPDU" \
+      "2|34|Sesion GT|SPDU Give Tokens: dar el turno para hablar" \
+      "2|34|Sesion DT|SPDU Data Transfer: lo que sigue son datos" \
       "23|32|Mensaje|\"$MSG\""
     seguir
 
@@ -203,19 +204,20 @@ por_dentro_capas() {
     desarmar "$r" \
       "4|33|TPKT|longitud 0x35 = 53" \
       "3|35|TP0 (DT)|encabezado de datos de transporte, igual que en el eco TP0" \
-      "4|34|Sesion|Give Tokens + Data Transfer" \
+      "4|34|Sesion|GT (Give Tokens) + DT (Data Transfer)" \
       "2|36|Present.|[APPLICATION 1] fully-encoded-data, 40 bytes" \
       "2|36|  PDV-list|SEQUENCE de 38 bytes" \
       "3|36|  contexto|INTEGER 1: id del contexto de presentacion" \
       "2|36|  valor|[0] single-ASN1-type, 33 bytes" \
-      "2|31|ROSE|[1] Invoke (invocar operacion remota), 31 bytes" \
+      "2|31|ROSE|Remote Operations Service Element: [1] Invoke (invocar operacion remota), 31 bytes" \
       "3|31|  invokeID|INTEGER 1: numero de esta invocacion" \
       "3|31|  operacion|INTEGER 0: operacion 'echo'" \
       "2|31|  argumento|OCTET STRING de 23 bytes" \
       "23|32|Mensaje|\"$MSG\""
     cat <<'EOF'
 
-  Asi se lee BER: TIPO - LONGITUD - VALOR, y los valores se anidan como cajas.
+  BER (Basic Encoding Rules) de ASN.1 (Abstract Syntax Notation One)
+  se lee TIPO - LONGITUD - VALOR, y los valores se anidan como cajas.
     61 28 [ 30 26 [ 02 01 01   A0 21 [ A1 1F [ 02 01 01  02 01 00  04 17 [mensaje] ] ] ] ]
 EOF
     seguir
@@ -225,18 +227,18 @@ EOF
       "4|33|TPKT|1er paquete: 16 bytes" \
       "3|35|TP0 (DT)|encabezado de datos de transporte, igual que en el eco TP0" \
       "2|34|Sesion GT|Give Tokens" \
-      "7|34|Sesion AS|ACTIVITY START (se abre una actividad)" \
+      "7|34|Sesion AS|AS = Activity Start: inicio de actividad" \
       "4|33|TPKT|2do paquete: 55 bytes (los datos)" \
       "3|35|TP0 (DT)|encabezado de datos de transporte, igual que en el eco TP0" \
-      "4|34|Sesion|Give Tokens + Data Transfer" \
+      "4|34|Sesion|GT (Give Tokens) + DT (Data Transfer)" \
       "9|36|Present.|contexto 17 (RTSE)" \
-      "2|37|RTSE|OCTET STRING de 33 bytes con la APDU de ROSE dentro" \
+      "2|37|RTSE|Reliable Transfer Service Element: OCTET STRING de 33 bytes con la APDU (Application PDU) de ROSE" \
       "10|31|ROSE|Invoke, id 1, operacion 0" \
       "23|32|Mensaje|\"$MSG\"" \
       "4|33|TPKT|3er paquete: 14 bytes" \
       "3|35|TP0 (DT)|encabezado de datos de transporte, igual que en el eco TP0" \
       "2|34|Sesion GT|Give Tokens" \
-      "5|34|Sesion MAP|MAJOR SYNC POINT, numero de serie '1' (punto de control)"
+      "5|34|Sesion MAP|MAP = Major Sync Point: punto de sincronizacion mayor, serie '1'"
     cat <<'EOF'
 
   RTSE encierra cada transferencia en una ACTIVIDAD de sesion y la confirma con un
@@ -261,6 +263,7 @@ por_dentro_ftam() {
       | awk '{ if ($0=="") $0="(datos del archivo / directorio)"; printf "  %2d  %s\n", NR, $0 }'
     cat <<'EOF'
 
+  FTAM = File Transfer, Access and Management (ISO 8571)
   initialize  = abrir la asociacion FTAM (con usuario y clave)
   select      = elegir el archivo          open / close  = abrirlo / cerrarlo
   read        = pedir la lectura           data-end      = fin de los datos
@@ -281,7 +284,8 @@ EOF
       | grep -A2 "initiator-identity\|filestore-password" | grep -v "^--" | sed 's/^ */  /'
     pw=$(ts -r "$CAP/ftam.pcap" -Y "frame.number==$f1" -O ftam | grep "octetString:" | head -1 | awk '{print $2}')
     [ -n "$pw" ] && echo "  $pw  ->  \"$(echo "$pw" | hex2txt)\""
-    echo "  En 1992 no habia cifrado: hoy esto se resuelve con TLS (SFTP, HTTPS)."
+    echo "  En 1992 no habia cifrado: hoy se usa TLS (Transport Layer Security), como en SFTP y HTTPS."
+    echo "  SFTP = SSH File Transfer Protocol."
     seguir
 
     paso "3. El contenido del archivo dentro de los paquetes"
